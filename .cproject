@@ -20,9 +20,9 @@
 							<tool id="cdt.managedbuild.tool.gnu.assembler.mingw.exe.debug.1710793295" name="GCC Assembler" superClass="cdt.managedbuild.tool.gnu.assembler.mingw.exe.debug">
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="gnu.both.asm.option.include.paths.605897391" name="Include paths (-I)" superClass="gnu.both.asm.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\SDL2-2.0.14\i686-w64-mingw32\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\libav\i686-w64-mingw32\include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Libraries}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\ffmpeg-latest-win32-gpl-shared-7.1\include&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.638107473" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
 							</tool>
@@ -41,9 +41,9 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="gnu.c.compiler.option.include.paths.1072205744" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\SDL2-2.0.14\i686-w64-mingw32\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\libav\i686-w64-mingw32\include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Libraries}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\ffmpeg-latest-win32-gpl-shared-7.1\include&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.146889447" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
@@ -54,12 +54,12 @@
 									<listOptionValue builtIn="false" value="avcodec"/>
 									<listOptionValue builtIn="false" value="avformat"/>
 									<listOptionValue builtIn="false" value="avutil"/>
-									<listOptionValue builtIn="false" value="avresample"/>
+									<listOptionValue builtIn="false" value="swresample"/>
 									<listOptionValue builtIn="false" value="avfilter"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="gnu.c.link.option.paths.1918763962" name="Library search path (-L)" superClass="gnu.c.link.option.paths" useByScannerDiscovery="false" valueType="libPaths">
 									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\SDL2-2.0.14\i686-w64-mingw32\lib&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\libav\i686-w64-mingw32\lib&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\ffmpeg-latest-win32-gpl-shared-7.1\lib&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.linker.input.999501457" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
@@ -95,9 +95,9 @@
 							<tool id="cdt.managedbuild.tool.gnu.assembler.mingw.exe.release.635847164" name="GCC Assembler" superClass="cdt.managedbuild.tool.gnu.assembler.mingw.exe.release">
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="gnu.both.asm.option.include.paths.202486975" name="Include paths (-I)" superClass="gnu.both.asm.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\SDL2-2.0.14\i686-w64-mingw32\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\libav\i686-w64-mingw32\include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Libraries}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\ffmpeg-latest-win32-gpl-shared-7.1\include&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.636072176" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
 							</tool>
@@ -116,9 +116,9 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="gnu.c.compiler.option.include.paths.1065594419" name="Include paths (-I)" superClass="gnu.c.compiler.option.include.paths" useByScannerDiscovery="false" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\SDL2-2.0.14\i686-w64-mingw32\include&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\libav\i686-w64-mingw32\include&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Inc}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/lv_conv/Libraries}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\ffmpeg-latest-win32-gpl-shared-7.1\include&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.1788951938" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
@@ -129,12 +129,12 @@
 									<listOptionValue builtIn="false" value="avcodec"/>
 									<listOptionValue builtIn="false" value="avformat"/>
 									<listOptionValue builtIn="false" value="avutil"/>
-									<listOptionValue builtIn="false" value="avresample"/>
+									<listOptionValue builtIn="false" value="swresample"/>
 									<listOptionValue builtIn="false" value="avfilter"/>
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="gnu.c.link.option.paths.1455410511" name="Library search path (-L)" superClass="gnu.c.link.option.paths" valueType="libPaths">
 									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\SDL2-2.0.14\i686-w64-mingw32\lib&quot;"/>
-									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\libav\i686-w64-mingw32\lib&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;C:\Development\Sdk\ffmpeg-latest-win32-gpl-shared-7.1\lib&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.c.linker.input.1809723534" superClass="cdt.managedbuild.tool.gnu.c.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>

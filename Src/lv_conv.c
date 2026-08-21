@@ -28,19 +28,25 @@
 #include "lv_conv.h"
 #include <stdio.h>
 #include <stdlib.h>
-#include <windows.h>
-#include <shlobj.h>
-#include <dirent.h>
 
-#include <libavutil/imgutils.h>
-#include <libavutil/opt.h>
-#include <libavutil/samplefmt.h>
+#include <libavcodec/avcodec.h>
+
 #include <libavformat/avformat.h>
-#include <libavresample/avresample.h>
 
 #include <libavfilter/avfilter.h>
 #include <libavfilter/buffersink.h>
 #include <libavfilter/buffersrc.h>
+
+#include <libavutil/imgutils.h>
+#include <libavutil/opt.h>
+#include <libavutil/samplefmt.h>
+#include <libavutil/channel_layout.h>
+
+#include <libswresample/swresample.h>
+
+#include <windows.h>
+#include <shlobj.h>
+#include <dirent.h>
 
 /* Private types -------------------------------------------------------------*/
 typedef enum
@@ -99,7 +105,7 @@ typedef struct
 typedef struct
 {
   AVFormatContext * fmt_ctx;
-  AVAudioResampleContext * avr_ctx;
+  SwrContext * swr_ctx;
   
   lv_conv_libav_obj_t enc_objs;
   lv_conv_libav_obj_t dec_objs;
@@ -341,8 +347,8 @@ static void                   lv_conv_file_conv(lv_conv_handle_t * handle);
 
 static uint64_t fsize(FILE *fp);
 static void remove_dir(char *path);
+static void ansi_to_utf8(const char *ansi_src, char *utf8_dst, size_t dst_size);
 
-static char *av_err2str(int errnum);
 const char *av_get_media_type_string(enum AVMediaType media_type);
 static int output_pkt(AVCodecContext *ctx, AVPacket *pkt);
 static int output_frame(AVCodecContext *ctx, AVFrame *frame);
@@ -351,7 +357,7 @@ static int encode (AVCodecContext *ctx, AVPacket *pkt, AVFrame *frame,
                    char *err_msg);
 static int decode (AVCodecContext *ctx, AVPacket *pkt, AVFrame *frame,
                    char *err_msg);
-static int resample(AVAudioResampleContext **ctx, AVFrame *out_frame, AVFrame *in_frame,
+static int resample(SwrContext **ctx, AVFrame *out_frame, AVFrame *in_frame,
                     char *err_msg);
 static int open_encoder_context (enum AVCodecID id, AVCodecContext **ctx, 
                                  enum AVMediaType type, 
@@ -366,9 +372,9 @@ static int open_decoder_context (int *stream_idx, AVCodecContext **ctx,
                                  enum AVMediaType type,
                                  char *src_filename, 
                                  char *err_msg);
-static int open_resampler_context (AVAudioResampleContext **ctx, uint64_t in_channel_layout,
+static int open_resampler_context (SwrContext **ctx, uint64_t in_channel_layout_mask,
                                    enum AVSampleFormat in_sample_fmt, int in_sample_rate,
-                                   uint64_t out_channel_layout, enum AVSampleFormat out_sample_fmt,
+                                   uint64_t out_channel_layout_mask, enum AVSampleFormat out_sample_fmt,
                                    int out_sample_rate, char *err_msg);
 static int init_filter_graph(enum AVMediaType type,
                              AVFilterGraph **graph, 
@@ -430,6 +436,12 @@ void lv_conv_run(void)
   uint32_t pad_size, max_byterate;
   uint32_t start_idx, end_idx;
   uint64_t file_size, header_size, frame_vect_size, data_size;
+  
+  char srt_src_path[256];
+  char srt_dst_path[256];
+  char temp_folder[256];
+  uint8_t has_subs = 0;
+  FILE *srt_file;  
 
   /* initialize */
   if (!libav->fmt_ctx)
@@ -573,41 +585,6 @@ void lv_conv_run(void)
       {
         sprintf (handle->err_msg, "Could not allocate packet\n");
         handle->err = LV_CONV_ERR; lv_conv_conv_task_kill(handle); return;
-      }      
-      
-      /* set up the video filtergraph */
-      char src_option_str[1024], filter_option_str[1024];
-
-      snprintf(src_option_str, sizeof(src_option_str),
-               "width=%d:height=%d:pix_fmt=%s:sar=%d/%d:time_base=%d/%d:frame_rate=%d/%d",
-               video_dec->ctx->width, video_dec->ctx->height, 
-               av_get_pix_fmt_name(video_dec->ctx->pix_fmt),
-               video_dec->stream->sample_aspect_ratio.num, video_dec->stream->sample_aspect_ratio.den,
-               video_dec->stream->time_base.num, video_dec->stream->time_base.den,
-               video_dec->stream->avg_frame_rate.num, video_dec->stream->avg_frame_rate.den);
-               
-      snprintf(filter_option_str, sizeof(filter_option_str),
-               "fps=%d,scale=%d:%d",
-               handle->frame_rate, handle->frame_width, handle->frame_height);
-               
-      if (init_filter_graph(AVMEDIA_TYPE_VIDEO,
-                            &video_flt->filter_graph, 
-                            &video_flt->filter_src,
-                            &video_flt->filter_sink,
-                            src_option_str,
-                            filter_option_str,
-                            handle->err_msg) < 0)
-      {
-        handle->err = LV_CONV_ERR; lv_conv_conv_task_kill(handle); return;  
-      }
-      
-      /* create resampler context */
-      if (open_resampler_context (&libav->avr_ctx, audio_dec->ctx->channel_layout,
-                                   audio_dec->ctx->sample_fmt, audio_dec->ctx->sample_rate,
-                                   AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16,
-                                   handle->audio_samplerate, handle->err_msg) < 0)
-      {
-        handle->err = LV_CONV_ERR; lv_conv_conv_task_kill(handle); return;
       }
       
       /* check if handle->dst_path is valid */
@@ -628,6 +605,70 @@ void lv_conv_run(void)
                    str);
           handle->err = LV_CONV_ERR; lv_conv_conv_task_kill(handle); return;     
         }
+      }      
+      
+      /* check if subtitles are available */
+      strcpy(srt_src_path, queue->data.full_path);
+      pstr = strrchr(srt_src_path, '.');
+      if (pstr) strcpy(pstr, ".srt");
+      else strcat(srt_src_path, ".srt");
+      
+      srt_file = fopen(srt_src_path, "r");
+      if (srt_file)
+      {
+        fclose(srt_file);
+        
+        snprintf(srt_dst_path, sizeof(srt_dst_path), "%s\\temp\\temp.srt", handle->dst_path);
+        CopyFile(srt_src_path, srt_dst_path, FALSE);
+        
+        snprintf(temp_folder, sizeof(temp_folder), "%s\\temp", handle->dst_path);
+        SetCurrentDirectory(temp_folder);        
+        
+        has_subs = 1;
+      }
+      
+      /* set up the video filtergraph */
+      char src_option_str[1024], filter_option_str[1024];
+
+      snprintf(src_option_str, sizeof(src_option_str),
+               "width=%d:height=%d:pix_fmt=%s:sar=%d/%d:time_base=%d/%d:frame_rate=%d/%d",
+               video_dec->ctx->width, video_dec->ctx->height, 
+               av_get_pix_fmt_name(video_dec->ctx->pix_fmt),
+               video_dec->stream->sample_aspect_ratio.num, video_dec->stream->sample_aspect_ratio.den,
+               video_dec->stream->time_base.num, video_dec->stream->time_base.den,
+               video_dec->stream->avg_frame_rate.num, video_dec->stream->avg_frame_rate.den);
+      
+      if (has_subs)
+      {
+        snprintf(filter_option_str, sizeof(filter_option_str),
+                 "fps=%d,scale=%d:%d,subtitles=temp.srt",
+                 handle->frame_rate, handle->frame_width, handle->frame_height);        
+      }
+      else
+      {
+        snprintf(filter_option_str, sizeof(filter_option_str),
+                 "fps=%d,scale=%d:%d",
+                 handle->frame_rate, handle->frame_width, handle->frame_height);
+      }
+               
+      if (init_filter_graph(AVMEDIA_TYPE_VIDEO,
+                            &video_flt->filter_graph, 
+                            &video_flt->filter_src,
+                            &video_flt->filter_sink,
+                            src_option_str,
+                            filter_option_str,
+                            handle->err_msg) < 0)
+      {
+        handle->err = LV_CONV_ERR; lv_conv_conv_task_kill(handle); return;  
+      }
+      
+      /* create resampler context */
+      if (open_resampler_context (&libav->swr_ctx, audio_dec->ctx->ch_layout.u.mask,
+                                   audio_dec->ctx->sample_fmt, audio_dec->ctx->sample_rate,
+                                   AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_S16,
+                                   handle->audio_samplerate, handle->err_msg) < 0)
+      {
+        handle->err = LV_CONV_ERR; lv_conv_conv_task_kill(handle); return;
       }
       
       /* create video temp file */
@@ -1180,21 +1221,25 @@ static void lv_conv_checkbox_event_cb(lv_obj_t * obj, lv_event_t e)
 
 static int lv_conv_file_get(lv_conv_obj_t * obj)
 {
+  char raw_path[256] = {0};
+  
   uint8_t i;
   OPENFILENAME ofn = {0};
   HWND hwnd = GetActiveWindow();
 
   ofn.lStructSize = sizeof(ofn);
   ofn.hwndOwner = hwnd;
-  ofn.lpstrFile = obj->full_path;
+  ofn.lpstrFile = raw_path;
   ofn.nMaxFile = 256;
   ofn.lpstrFilter = "Video files\0*.mp4\0";
 
   if (GetOpenFileName(&ofn))
   {
+    ansi_to_utf8(raw_path, obj->full_path, sizeof(obj->full_path));
+    
     for (i = strlen (obj->full_path) - 1; i; i--)
     {
-      if (obj->full_path[i] == '\\')
+      if (obj->full_path[i] == '\\' || obj->full_path[i] == '/')
       {
         memcpy(&obj->name, &obj->full_path[i + 1], strlen(&obj->full_path[i + 1]));
         return 0;
@@ -1222,11 +1267,7 @@ static void lv_conv_folder_get(char * path)
 }
 
 static void lv_conv_file_conv(lv_conv_handle_t * handle)
-{
-  av_register_all();
-  avcodec_register_all();
-  avfilter_register_all();
-  
+{  
   h_bar = lv_cont_create(lv_scr_act(), NULL);
   lv_cont_set_layout(h_bar, LV_LAYOUT_PRETTY_MID);
   lv_cont_set_fit2(h_bar, LV_FIT_NONE, LV_FIT_TIGHT);
@@ -1287,12 +1328,13 @@ static void remove_dir(char *path)
   }
 }
 
-static char *av_err2str(int errnum)
+static void ansi_to_utf8(const char *ansi_src, char *utf8_dst, size_t dst_size)
 {
-  static char errbuf[64] = {0};
-
-  av_strerror(errnum, &errbuf[0], 64);
-  return &errbuf[0];
+  wchar_t wbuf[512] = {0};
+  
+  MultiByteToWideChar(CP_ACP, 0, ansi_src, -1, wbuf, 512);
+  
+  WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, utf8_dst, (int)dst_size, NULL, NULL);  
 }
 
 const char *av_get_media_type_string(enum AVMediaType media_type)
@@ -1407,7 +1449,7 @@ static int output_frame(AVCodecContext *ctx, AVFrame *frame)
   else if (ctx->codec->type == AVMEDIA_TYPE_AUDIO)
   {
     /* resample audio */
-    ret = resample (&libav->avr_ctx, libav->avr_objs.frame, frame, hconv.err_msg);
+    ret = resample (&libav->swr_ctx, libav->avr_objs.frame, frame, hconv.err_msg);
     if (ret < 0)
       return ret;
   }
@@ -1500,48 +1542,28 @@ static int decode (AVCodecContext *ctx, AVPacket *pkt, AVFrame *frame,
   return 0;
 }
 
-static int resample(AVAudioResampleContext **ctx, AVFrame *out_frame, AVFrame *in_frame,
+static int resample(SwrContext **ctx, AVFrame *out_frame, AVFrame *in_frame,
                     char *err_msg)
 {
   int ret = 0, out_linesize, out_samples, dst_bufsize; 
-  int64_t in_sample_rate, out_sample_rate, out_sample_fmt;
   uint8_t **in_data = (uint8_t **)in_frame->data;
-  uint8_t *out_data = (uint8_t *)out_frame->data[0];
+  uint8_t *out_data = NULL;
 
-  av_opt_get_int (*ctx, "in_sample_rate", 0, &in_sample_rate);  
-  av_opt_get_int (*ctx, "out_sample_rate", 0, &out_sample_rate);
-  av_opt_get_int (*ctx, "out_sample_fmt", 0, &out_sample_fmt);
+  out_samples = swr_get_out_samples(*ctx, in_frame->nb_samples);
 
-  out_samples =   avresample_available(*ctx) + 
-                  av_rescale_rnd(avresample_get_delay(*ctx) + in_frame->nb_samples,
-                                 out_sample_rate,
-                                 in_sample_rate,
-                                 AV_ROUND_UP);
-
-  if((ret = av_samples_alloc(&out_data, &out_linesize, 2, out_samples, out_sample_fmt, 1)) < 0)
+  if((ret = av_samples_alloc(&out_data, &out_linesize, 2, out_samples, AV_SAMPLE_FMT_S16, 1)) < 0)
   {
     sprintf (err_msg, "Alloc samples not succeeded (%s)\n", av_err2str (ret));
     return ret;
   }
 
-  out_samples = avresample_convert((*ctx), &out_data, out_linesize, out_samples,
-                                   in_data, 0, in_frame->nb_samples);
-  
-  dst_bufsize = av_samples_get_buffer_size(&out_linesize, 2,
-                                           out_samples, out_sample_fmt, 1);
-  if (dst_bufsize < 0)
-  {
-    sprintf (err_msg, "Could not get sample buffer size\n");
-    return AVERROR(EINVAL);
-  }
+  out_samples = swr_convert(*ctx, &out_data, out_samples, (const uint8_t **)in_data, in_frame->nb_samples);
+  dst_bufsize = av_samples_get_buffer_size(&out_linesize, 2, out_samples, AV_SAMPLE_FMT_S16, 1);
 
   ret = output_sample(out_data, dst_bufsize);
 
   av_freep(&out_data);
-  if (ret < 0)
-    return ret;
-  
-  return 0;
+  return ret;
 }
 
 static int open_encoder_context (enum AVCodecID id, AVCodecContext **ctx, 
@@ -1593,8 +1615,9 @@ static int open_encoder_context (enum AVCodecID id, AVCodecContext **ctx,
   {
     /* audio param */
     (*ctx)->sample_rate = sample_rate;
-    (*ctx)->channels = channels;
     (*ctx)->sample_fmt = sample_fmt;
+    
+    av_channel_layout_default(&(*ctx)->ch_layout, channels);
   }  
   
   /* init the encoder */
@@ -1671,30 +1694,39 @@ static int open_decoder_context (int *stream_idx, AVCodecContext **ctx,
   return 0;
 }
 
-static int open_resampler_context (AVAudioResampleContext **ctx, uint64_t in_channel_layout,
+static int open_resampler_context (SwrContext **ctx, uint64_t in_channel_layout_mask,
                                    enum AVSampleFormat in_sample_fmt, int in_sample_rate,
-                                   uint64_t out_channel_layout, enum AVSampleFormat out_sample_fmt,
+                                   uint64_t out_channel_layout_mask, enum AVSampleFormat out_sample_fmt,
                                    int out_sample_rate, char *err_msg)
 {
   int ret;
-  
+  AVChannelLayout in_ch_layout = {0};
+  AVChannelLayout out_ch_layout = {0};
+
+  av_channel_layout_from_mask(&in_ch_layout, in_channel_layout_mask);
+  av_channel_layout_from_mask(&out_ch_layout, out_channel_layout_mask);
+
   /* create resampler context */
-  *ctx = avresample_alloc_context();
-  if (!*ctx)
+  ret = swr_alloc_set_opts2(ctx,
+                            &out_ch_layout,
+                            out_sample_fmt,
+                            out_sample_rate,
+                            &in_ch_layout,
+                            in_sample_fmt,
+                            in_sample_rate,
+                            0, NULL);
+
+  av_channel_layout_uninit(&in_ch_layout);
+  av_channel_layout_uninit(&out_ch_layout);
+
+  if (ret < 0 || !*ctx)
   {
-    sprintf (err_msg, "Could not allocate resampler context buffer\n");
-    return AVERROR(ENOMEM);
-  }
-      
-  /* set options */
-  av_opt_set_int(*ctx, "in_channel_layout", in_channel_layout, 0);
-  av_opt_set_int(*ctx, "in_sample_fmt", in_sample_fmt, 0);
-  av_opt_set_int(*ctx, "in_sample_rate", in_sample_rate, 0);
-  av_opt_set_int(*ctx, "out_channel_layout", out_channel_layout, 0);
-  av_opt_set_int(*ctx, "out_sample_fmt", out_sample_fmt, 0);
-  av_opt_set_int(*ctx, "out_sample_rate", out_sample_rate, 0);
-      
-  if ((ret = avresample_open(*ctx)) < 0)
+    sprintf (err_msg, "Could not allocate/configure resampler context (%s)\n", av_err2str(ret));
+    return ret < 0 ? ret : AVERROR(ENOMEM);
+  }  
+  
+  /* init resampler context */
+  if ((ret = swr_init(*ctx)) < 0)
   {
     sprintf (err_msg, "Could not open resampler context buffer\n");
     return ret;        
@@ -1871,10 +1903,9 @@ static void lv_conv_conv_task_cleanup(lv_conv_handle_t * handle)
   {
     avformat_close_input(&libav->fmt_ctx); libav->fmt_ctx = NULL;
   }
-  if (libav->avr_ctx)
+  if (libav->swr_ctx)
   {
-    avresample_close(libav->avr_ctx);
-    avresample_free(&libav->avr_ctx); libav->avr_ctx = NULL;
+    swr_free(&libav->swr_ctx); libav->swr_ctx = NULL;
   }
   if (libav->enc_objs.pkt)
   {
@@ -1919,6 +1950,8 @@ static void lv_conv_conv_task_cleanup(lv_conv_handle_t * handle)
   
   if (hconv.dst_path[0] != '\0')
   {
+    SetCurrentDirectory(hconv.dst_path);
+    
     snprintf(temp_path, sizeof(temp_path), "%s\\temp", hconv.dst_path);
     remove_dir(temp_path);
   }
