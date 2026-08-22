@@ -207,7 +207,7 @@ typedef struct
 } lv_conv_handle_t;
 
 /* Private constants ---------------------------------------------------------*/
-#define MAX_FILE_SIZE 0xFFFFFFFF
+#define MAX_FILE_SIZE 0xE0000000
 #define DD_OPTS_NUM 20
 
 const char * btns00[] = {"Ok", ""};
