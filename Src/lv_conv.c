@@ -852,7 +852,7 @@ void lv_conv_run(void)
       handle->fileheader.audio_bytedepth = 2;
       handle->fileheader.audio_samplerate = handle->audio_samplerate;
       handle->fileheader.audio_byterate = 2 * 2 * handle->audio_samplerate;
-      handle->fileheader.audio_totalsize = handle->cur_frames * handle->fileheader.audio_byterate / handle->fileheader.frame_rate;
+      handle->fileheader.audio_totalsize = handle->cur_frames * (handle->fileheader.audio_byterate / handle->fileheader.frame_rate);
       fwrite (&handle->fileheader, 1, sizeof(handle->fileheader), handle->dst_file);
       
       /* write frame size vector to output file */
